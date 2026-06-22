@@ -1,8 +1,10 @@
 from bs4 import BeautifulSoup
 from selenium import webdriver
+from selenium.common.exceptions import WebDriverException
 import requests
 import time
 import csv
+import os
 
 driver = webdriver.Chrome()
 
@@ -16,7 +18,7 @@ sitemap_response = requests.get("https://www.metacritic.com/games.xml", headers=
 sitemap_soup = BeautifulSoup(sitemap_response.text, "xml")
 sub_sitemap_urls = sitemap_soup.find_all("loc")
 
-# Crawl through second bunch of sitemaps - First in this case
+# Crawl through second bunch of sitemaps - First sitemap in this case
 sub_sitemap_response = requests.get(sub_sitemap_urls[0].text, headers=headers)
 sub_sitemap_soup = BeautifulSoup(sub_sitemap_response.text, "xml")
 game_urls = sub_sitemap_soup.find_all("loc")
@@ -29,7 +31,18 @@ results = []
 
 #################
 
-for url in game_urls[10:20]:
+# Catch up logic
+existing_titles = set()
+if os.path.exists("metacritic_scores.csv"):
+    with open("metacritic_scores.csv", "r", encoding="utf-8") as file:
+        reader = csv.reader(file)
+        next(reader)
+        for row in reader:
+            existing_titles.add(row[0])
+
+
+# Main scraping logic
+for url in game_urls[:100]:
     game_url = url.text
 
     try:
@@ -39,6 +52,11 @@ for url in game_urls[10:20]:
         soup = BeautifulSoup(html, "html.parser")
         
         title = soup.title.text.replace(" Reviews - Metacritic", "")
+
+        if title in existing_titles:
+            print(f"Already scraped {title} - SKIPPED")
+            continue
+        
         scores = {}
         wrappers = soup.find_all(attrs={"data-testid": "global-score-wrapper"})
         
@@ -53,23 +71,30 @@ for url in game_urls[10:20]:
                 if header not in scores:
                     scores[header] = value
 
-        results.append({"title": title, "score": scores})
+        #Write to CSV
+        metascore = scores.get("Metascore", "N/A") # Use .get instead of just result["scores"]["Metascore"] for crash handling
+        user_score = scores.get("User Score", "N/A")
+
+        with open("metacritic_scores.csv", "a", newline="", encoding="utf-8") as file:
+            writer = csv.writer(file)
+            writer.writerow([title, metascore, user_score])
+
+        existing_titles.add(title)
+        print(f"{title}, Metascore - {metascore}, User Score - {user_score}")
+
+    except WebDriverException as e:
+        print(f"Browser crashed on {game_url}, restarting driver: {e}")
+        driver.quit()
+        driver = webdriver.Chrome()
+        continue
+    
     except Exception as e:
         print(f"Failed on {game_url}: {e}")
         
     time.sleep(1)
 
+driver.quit()
+print("Scraping complete")
 
-# Write to CSV
-
-with open("metacritic_scores.csv", "w", newline="", encoding="utf-8") as file:
-    writer = csv.writer(file)
-    writer.writerow(["Title", "Metascore", "User Score"])
-
-    for result in results:
-        title = result["title"]
-        metascore = result["score"].get("Metascore", "N/A") # Use .get instead of just result["scores"]["Metascore"] for crash handling
-        user_score = result["score"].get("User Score", "N/A")
-        writer.writerow([title, metascore, user_score])
 
 
