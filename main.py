@@ -1,6 +1,7 @@
 from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.common.exceptions import WebDriverException
+from urllib3.exceptions import ProtocolError, NewConnectionError
 import requests
 import time
 import csv
@@ -82,9 +83,12 @@ for url in game_urls[:100]:
         existing_titles.add(title)
         print(f"{title}, Metascore - {metascore}, User Score - {user_score}")
 
-    except WebDriverException as e:
+    except (WebDriverException, ProtocolError, NewConnectionError, ConnectionResetError) as e:
         print(f"Browser crashed on {game_url}, restarting driver: {e}")
-        driver.quit()
+        try:
+            driver.quit()
+        except Exception:
+            pass
         driver = webdriver.Chrome()
         continue
     
