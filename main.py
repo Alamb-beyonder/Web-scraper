@@ -43,7 +43,7 @@ if os.path.exists("metacritic_scores.csv"):
 
 
 # Main scraping logic
-for url in game_urls[:100]:
+for url in game_urls:
     game_url = url.text
 
     try:
